@@ -1,42 +1,58 @@
 from pathlib import Path
 
-from app.repositories.knowledge_repository import add_chunk
+# from app.db.supabase_client import supabase
+# from app.services.embeddings.local_embeddings import embed_text
+import os
+print("Current working directory:", os.getcwd())
 
-RAW_DIR = Path("data/raw")
-CHUNK_SIZE = 1200
-CHUNK_OVERLAP = 200
+from app.db.supabase_client import supabase
+from app.services.embeddings.local_embeddings import embed_text
+
+FILE_PATH = "scripts/deep-research-report.md"
+
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 150
 
 
-def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
+def chunk_text(text: str):
     chunks = []
     start = 0
+
     while start < len(text):
-        end = min(start + size, len(text))
+        end = start + CHUNK_SIZE
         chunk = text[start:end].strip()
+
         if chunk:
             chunks.append(chunk)
-        start += size - overlap
+
+        start += CHUNK_SIZE - CHUNK_OVERLAP
+
     return chunks
 
 
-def main():
-    for file_path in RAW_DIR.glob("*"):
-        if file_path.suffix.lower() not in {".txt", ".md"}:
-            continue
+def ingest():
+    file_text = Path(FILE_PATH).read_text(encoding="utf-8", errors="ignore")
 
-        content = file_path.read_text(encoding="utf-8", errors="ignore")
-        chunks = chunk_text(content)
+    chunks = chunk_text(file_text)
 
-        for i, chunk in enumerate(chunks):
-            add_chunk(
-                source=file_path.name,
-                chunk_index=i,
-                content=chunk,
-                metadata={"path": str(file_path)},
-            )
+    print(f"📦 Total chunks: {len(chunks)}")
 
-        print(f"Ingested {file_path.name}: {len(chunks)} chunks")
+    for i, chunk in enumerate(chunks):
+        embedding = embed_text(chunk)
+
+        res = supabase.table("knowledge_chunks").insert({
+            "source": "README.md",
+            "content": chunk,
+            "embedding": embedding,
+            "metadata": {
+                "chunk_index": i
+            }
+        }).execute()
+
+        print(f"✅ Inserted chunk {i + 1}/{len(chunks)}")
+
+    print("🚀 Ingestion complete!")
 
 
 if __name__ == "__main__":
-    main()
+    ingest()
