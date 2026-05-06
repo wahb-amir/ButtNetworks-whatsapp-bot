@@ -1,0 +1,123 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checking
+.mypy_cache/
+.pyre/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# FastAPI
+*.db
+*.sqlite3
+
+# Data folders
+data/raw/*
+data/processed/*
+data/embeddings/*
+
+# Keep folders tracked
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/embeddings/.gitkeep
+
+# Docker
+docker-data/
+*.pid
+
+# Supabase local
+.supabase/
+
+# LangChain / AI artifacts
+.langchain/
+chroma/
+faiss_index/
+
+# Node (if frontend later)
+node_modules/
+
+# Secrets
+secrets/
+credentials.json
+service-account.json
+
+# Mac/Linux temp
+*.tmp
+*.temp
+
+# Testing
+.cache/
+
+# Coverage reports
+coverage.xml
+
+*__init__*
+
+# Ruff
+.ruff_cache/
+
+# PyCharm
+.idea_modules/
+
+# VSCode testing
+.history/
+
+# Local uploads
+uploads/
+
+# Generated docs
+site/
+
+# Misc
+*.bak
+*.old
