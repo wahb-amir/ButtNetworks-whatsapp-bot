@@ -1,60 +1,82 @@
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi import APIRouter, Form, Response
+from twilio.twiml.messaging_response import MessagingResponse
 
+# 1. Import your centralized settings
 from app.core.config import settings
+
+# Importing your existing logic
 from app.repositories.chat_repository import (
     get_or_create_conversation,
     get_recent_messages,
     save_message,
 )
-from app.services.whatsapp.meta_client import send_whatsapp_text
 from app.services.rag.pipeline import answer_with_rag
-from app.services.whatsapp.parser import extract_inbound_messages
 
 router = APIRouter()
 
+@router.post("/whatsapp")
+async def whatsapp_webhook(
+    From: str = Form(...), 
+    Body: str = Form(...), 
+    MessageSid: str = Form(...)
+):
+    """
+    Handles incoming WhatsApp messages from Twilio using .env settings.
+    """
+    # Clean up the sender ID (Twilio sends 'whatsapp:+123456789')
+    user_id = From.replace("whatsapp:", "")
+    text = Body.strip()
 
-@router.get("/webhook")
-async def verify_webhook(request: Request):
-    mode = request.query_params.get("hub.mode")
-    token = request.query_params.get("hub.verify_token")
-    challenge = request.query_params.get("hub.challenge")
-
-    if mode == "subscribe" and token == settings.whatsapp_verify_token:
-        return PlainTextResponse(challenge or "", status_code=200)
-
-    raise HTTPException(status_code=403, detail="Webhook verification failed")
-
-
-@router.post("/webhook")
-async def whatsapp_webhook(payload: dict):
-    inbound_messages = extract_inbound_messages(payload)
-
-    for msg in inbound_messages:
-        user_id = msg["from"]
-        text = msg["text"].strip()
-
-        if not text:
-            continue
-
+    try:
+        # 2. Manage Conversation State
         conversation = get_or_create_conversation(user_id)
+        conversation_id = str(conversation["id"])
+
+        # 3. Save User Message to DB
         save_message(
-            conversation_id=str(conversation["id"]),
+            conversation_id=conversation_id,
             role="user",
             content=text,
-            wa_message_id=msg["wa_message_id"],
-            metadata={"timestamp": msg.get("timestamp")},
+            wa_message_id=MessageSid,
         )
 
-        history = get_recent_messages(str(conversation["id"]), limit=8)
-        reply, _chunks = answer_with_rag(text, chat_history=history)
+        # 4. Load Short-Term Memory (History)
+        history = get_recent_messages(conversation_id, limit=8)
 
+        # 5. Run RAG Pipeline
+        # The pipeline already has access to settings.groq_api_key internally
+        reply, chunks = answer_with_rag(
+            query=text,
+            chat_history=history,
+        )
+
+        # 6. Save Assistant Response to DB
         save_message(
-            conversation_id=str(conversation["id"]),
+            conversation_id=conversation_id,
             role="assistant",
             content=reply,
         )
 
-        await send_whatsapp_text(to=user_id, body=reply)
+        # 7. Generate TwiML Response
+        # We use the configured twilio_whatsapp_number if needed, 
+        # though Twilio usually handles the "From" automatically in the sandbox.
+        twilio_resp = MessagingResponse()
+        twilio_resp.message(reply)
+        
+        return Response(
+            content=str(twilio_resp), 
+            media_type="application/xml"
+        )
 
-    return {"status": "ok"}
+    except Exception as e:
+        # Log error using app_env from settings
+        if settings.app_env == "dev":
+            print(f"❌ [WEBHOOK ERROR] {e}")
+            
+        # Fallback TwiML error message
+        error_resp = MessagingResponse()
+        error_resp.message("I'm having trouble processing that right now. Please try again later.")
+        return Response(
+            content=str(error_resp), 
+            media_type="application/xml"
+        )
