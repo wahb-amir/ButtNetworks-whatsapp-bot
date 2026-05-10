@@ -51,7 +51,7 @@ def retrieve_chunks(
         "match_knowledge_chunks",
         {
             "query_embedding": query_embedding,
-            "match_count": match_count,
+            "match_count": top_k,
             "min_similarity": min_similarity,
         },
     ).execute()
@@ -73,15 +73,15 @@ def retrieve_chunks(
     return results
 
 
-def print_retrieval(query: str, match_count: int = 5, min_similarity: float = 0.65) -> None:
+def print_retrieval(query: str, top_k: int = 5, min_similarity: float = 0.65) -> None:
     """
     Small helper for debugging in terminal.
     """
     results = retrieve_chunks(
-        query=query,
-        match_count=match_count,
-        min_similarity=min_similarity,
-    )
+    query=query,
+    top_k=top_k,
+    min_similarity=min_similarity,
+)
 
     print(f"\nQUERY: {query}\n")
     if not results:
