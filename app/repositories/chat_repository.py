@@ -1,19 +1,28 @@
-from app.db.client import get_conn
+from __future__ import annotations
+
+from app.db.supabase_client import supabase
 
 
 def get_or_create_conversation(whatsapp_user_id: str) -> dict:
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            insert into conversations (whatsapp_user_id)
-            values (%s)
-            on conflict (whatsapp_user_id)
-            do update set updated_at = now()
-            returning id, whatsapp_user_id, created_at, updated_at
-            """,
-            (whatsapp_user_id,),
-        )
-        return cur.fetchone()
+    existing = (
+        supabase.table("conversations")
+        .select("id, whatsapp_user_id, created_at, updated_at")
+        .eq("whatsapp_user_id", whatsapp_user_id)
+        .limit(1)
+        .execute()
+    )
+
+    rows = existing.data or []
+    if rows:
+        return rows[0]
+
+    created = (
+        supabase.table("conversations")
+        .insert({"whatsapp_user_id": whatsapp_user_id})
+        .execute()
+    )
+
+    return (created.data or [])[0]
 
 
 def save_message(
@@ -23,29 +32,26 @@ def save_message(
     wa_message_id: str | None = None,
     metadata: dict | None = None,
 ) -> None:
-    metadata = metadata or {}
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            insert into chat_messages (conversation_id, role, content, wa_message_id, metadata)
-            values (%s, %s, %s, %s, %s::jsonb)
-            """,
-            (conversation_id, role, content, wa_message_id, __import__("json").dumps(metadata)),
-        )
-        conn.commit()
+    supabase.table("chat_messages").insert(
+        {
+            "conversation_id": conversation_id,
+            "role": role,
+            "content": content,
+            "wa_message_id": wa_message_id,
+            "metadata": metadata or {},
+        }
+    ).execute()
 
 
 def get_recent_messages(conversation_id: str, limit: int = 8) -> list[dict]:
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            select role, content, created_at
-            from chat_messages
-            where conversation_id = %s
-            order by created_at desc
-            limit %s
-            """,
-            (conversation_id, limit),
-        )
-        rows = cur.fetchall()
-        return list(reversed(rows))
+    response = (
+        supabase.table("chat_messages")
+        .select("role, content, created_at")
+        .eq("conversation_id", conversation_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+
+    rows = response.data or []
+    return list(reversed(rows))
