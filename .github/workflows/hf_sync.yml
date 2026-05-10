@@ -23,7 +23,7 @@ jobs:
         run: |
           set -e  # stop on errors
 
-          # 1. Build README safely
+          # 1. Build README safely (this only happens inside the runner)
           cat <<EOF > temp_readme.md
           ---
           title: WhatsApp RAG Bot
@@ -31,9 +31,6 @@ jobs:
           colorFrom: blue
           colorTo: green
           sdk: docker
-          sdk_version: "1.0"
-          python_version: "3.11"
-          app_file: app.py
           pinned: false
           ---
 
@@ -46,7 +43,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
 
-          # 3. Setup Hugging Face remote safely
+          # 3. Setup Hugging Face remote
           HF_URL="https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_REPO"
 
           if git remote | grep hf; then
@@ -55,9 +52,13 @@ jobs:
             git remote add hf "$HF_URL"
           fi
 
-          # 4. Commit safely (avoid empty commit failure)
-          git add README.md
-          git diff --cached --quiet && echo "No changes to commit" || git commit -m "Sync to Hugging Face"
-
-          # 5. Push
-          git push -f hf main
+          # 4. Stage EVERYTHING (The Code + Modified README)
+          git add .
+          
+          # Check if there are changes (avoids error if nothing changed)
+          if git diff --cached --quiet; then
+            echo "No changes to sync."
+          else
+            git commit -m "Sync: Full app update with metadata"
+            git push -f hf main
+          fi
