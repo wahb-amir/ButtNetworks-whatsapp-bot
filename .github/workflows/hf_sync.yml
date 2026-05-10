@@ -1,11 +1,19 @@
-name: Sync to Hugging Face
+name: Deploy to Hugging Face (Production)
+
 on:
   push:
     branches: [main]
 
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional manual version tag (e.g. v1.2.3)"
+        required: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -13,35 +21,123 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Inject HF Config and Push
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      # -----------------------------
+      # 1. Compute Version
+      # -----------------------------
+      - name: Generate Version
+        id: versioning
         run: |
-          # 1. Create a temporary README with the metadata
-          # Note: The YAML block must start at the very first line of the file
-          cat <<EOT > temp_readme.md
+          set -e
+
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # Auto semantic version from git tags
+            git fetch --tags
+
+            LATEST_TAG=$(git tag --sort=-v:refname | head -n 1)
+
+            if [ -z "$LATEST_TAG" ]; then
+              VERSION="v0.1.0"
+            else
+              BASE=${LATEST_TAG#v}
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE"
+              PATCH=$((PATCH + 1))
+              VERSION="v$MAJOR.$MINOR.$PATCH"
+            fi
+          fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # -----------------------------
+      # 2. Inject metadata safely
+      # -----------------------------
+      - name: Prepare Build Files
+        run: |
+          set -e
+
+          cat <<EOF > temp_readme.md
           ---
           title: WhatsApp RAG Bot
           emoji: 🤖
-          colorFrom: blue
-          colorTo: green
-          sdk: docker
-          pinned: false
+          version: $VERSION
           ---
 
-          EOT
-          
-          # 2. Append your original GitHub README content
+          EOF
+
+
           cat README.md >> temp_readme.md
           mv temp_readme.md README.md
 
-          # 3. Setup Git identity
-          git config --global user.name "github-actions"
-          git config --global user.email "actions@github.com"
+          # Optional: deployment metadata (useful for HF + debugging)
+          echo "{\"version\":\"$VERSION\",\"commit\":\"${GITHUB_SHA}\"}" > release.json
 
-          # 4. Push to Hugging Face
-          git remote add hf https://$username:$HF_TOKEN@huggingface.co/spaces/$username/$reponame.git
-          
-          git add README.md
-          git commit -m "Internal: Inject HF metadata for build"
+      # -----------------------------
+      # 3. Git Config
+      # -----------------------------
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+
+      # -----------------------------
+      # 4. Commit Release
+      # -----------------------------
+      - name: Commit Release
+        run: |
+          git add README.md release.json
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "Release $VERSION"
+
+      # -----------------------------
+      # 5. Tag Release
+      # -----------------------------
+      - name: Create Git Tag
+        run: |
+          git tag $VERSION
+          git push origin $VERSION
+
+      # -----------------------------
+      # 6. Push to Hugging Face (secure)
+      # -----------------------------
+      - name: Push to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: wahbamir
+          HF_REPO: whatsapp-rag-bot
+        run: |
+          set -e
+
+          HF_URL="https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_REPO"
+
+          if git remote | grep hf; then
+            git remote set-url hf "$HF_URL"
+          else
+            git remote add hf "$HF_URL"
+          fi
+
           git push -f hf main
+
+      # -----------------------------
+      # 7. Trigger HF Space Rebuild
+      # -----------------------------
+      - name: Trigger HF Space Restart
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer $HF_TOKEN" \
+            https://huggingface.co/api/spaces/wahbamir/whatsapp-rag-bot/reboot
+
+      # -----------------------------
+      # 8. Optional rollback helper
+      # -----------------------------
+      - name: Save rollback reference
+        run: |
+          git rev-parse HEAD > last_deploy_commit.txt
