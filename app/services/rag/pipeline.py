@@ -3,7 +3,58 @@ from __future__ import annotations
 from typing import List
 
 from app.services.rag.retriever import RetrievedChunk, retrieve_chunks
+from app.services.llm.groq_client import generate_response  # we'll define this next
 
+
+def format_context(chunks):
+    context = "\n\n".join(
+        f"[Source: {c.source} | score: {c.similarity:.2f}]\n{c.content}"
+        for c in chunks
+    )
+    return context
+
+
+def answer_with_rag(query: str, chat_history: List[Dict[str, Any]] = None):
+    # 1. Retrieve relevant chunks
+    chunks = retrieve_chunks(
+        query=query,
+        top_k=5,
+        min_similarity=0.65,
+    )
+
+    # 2. Build context
+    context = format_context(chunks)
+
+    # 3. Build chat memory
+    history_text = ""
+    if chat_history:
+        for msg in chat_history[-6:]:
+            role = msg["role"]
+            content = msg["content"]
+            history_text += f"{role.upper()}: {content}\n"
+
+    # 4. Final prompt
+    prompt = f"""
+You are a helpful AI assistant for a WhatsApp chatbot.
+
+Use the CONTEXT below to answer the user.
+
+CONTEXT:
+{context}
+
+CHAT HISTORY:
+{history_text}
+
+USER QUESTION:
+{query}
+
+Answer clearly and concisely.
+"""
+
+    # 5. LLM call (Groq)
+    response = generate_response(prompt)
+
+    return response, chunks
 
 def format_context(chunks: List[RetrievedChunk]) -> str:
     if not chunks:
