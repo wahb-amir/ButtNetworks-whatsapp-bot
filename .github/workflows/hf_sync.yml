@@ -18,8 +18,8 @@ jobs:
       - name: Inject HF Config and Push
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_USERNAME: wahbamir
-          HF_REPO: whatsapp-rag-bot
+          HF_USERNAME: ${{ secrets.USERNAME }}
+          HF_REPO: ${{ secrets.REPONAME }}
         run: |
           set -e  # stop on errors
 
