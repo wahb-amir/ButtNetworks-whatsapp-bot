@@ -1,10 +1,15 @@
 from fastapi import FastAPI
+from app.api.v1.webhook import router as webhook_router
 
-from app.api.v1.routes import api_router
+app = FastAPI(title="WhatsApp RAG Bot")
 
-app = FastAPI(title="WhatsApp RAG Bot", version="0.1.0")
-app.include_router(api_router)
 
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+app.include_router(
+    webhook_router, 
+    prefix="/api/v1/webhook", 
+    tags=["WhatsApp"]
+)
+
+@app.get("/")
+async def root():
+    return {"status": "online", "message": "RAG Bot Server is running"}
